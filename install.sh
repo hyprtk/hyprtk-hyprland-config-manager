@@ -42,6 +42,13 @@ for arg in "$@"; do
     esac
 done
 
+# Called by hyprtk-merged's installer under HYPRTK_DRYRUN: the package step is
+# simulated, so do not fail on (intentionally) missing runtime tools.
+if [ "${HYPRTK_DRYRUN:-}" = "1" ]; then
+    echo ":: DRYRUN: would install $TITLE into $INSTALL_DIR"
+    exit 0
+fi
+
 on_path() {
     case ":$PATH:" in *":$1:"*) return 0 ;; *) return 1 ;; esac
 }
