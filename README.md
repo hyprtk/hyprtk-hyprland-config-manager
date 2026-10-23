@@ -1,0 +1,1 @@
+# hyprtk-hyprland-config-manager
