@@ -177,14 +177,19 @@ def cmd_bar(args) -> int:
 
 
 def cmd_open(args) -> int:
-    env = None
-    if args.page:
-        import os
+    import os
 
-        env = dict(os.environ)
+    env = dict(os.environ)
+    if args.page:
         env["HYPR_CM_PAGE"] = args.page
+    if getattr(args, "overlay", False):
+        env["HYPR_CM_OVERLAY"] = "1"
     try:
-        proc = subprocess.Popen(["qs", "-p", str(APP_DIR)], env=env)
+        proc = subprocess.Popen(
+            ["qs", "-p", str(APP_DIR)], env=env,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
     except FileNotFoundError:
         print("qs (Quickshell) not found in PATH", file=sys.stderr)
         return 1
@@ -213,6 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("open", help="open the GUI")
     p.add_argument("--page")
+    p.add_argument("--overlay", action="store_true",
+                   help="open as a layer-shell overlay (used by bar-qt Settings)")
     p.add_argument("--foreground", action="store_true")
     p.set_defaults(func=cmd_open)
 

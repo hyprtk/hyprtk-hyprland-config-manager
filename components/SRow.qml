@@ -13,13 +13,13 @@ RowLayout {
         Text {
             text: label
             color: Theme.text
-            font.pixelSize: 13
+            font.pixelSize: Theme.scaled(13)
         }
         Text {
             visible: hint.length > 0
             text: hint
             color: Theme.dim
-            font.pixelSize: 11
+            font.pixelSize: Theme.scaled(11)
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }

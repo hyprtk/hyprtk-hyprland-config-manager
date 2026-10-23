@@ -24,6 +24,8 @@ class Sections(unittest.TestCase):
             self.assertIn("general", ids)
             self.assertIn("startup", ids)
             self.assertIn("animations-low", [f["id"] for f in data["animationFiles"]])
+            titles = [p["title"].lower() for p in data["pages"]]
+            self.assertEqual(titles, sorted(titles))
 
     def test_options_follow_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as d:

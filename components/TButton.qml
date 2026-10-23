@@ -1,3 +1,4 @@
+// Themed push button (matches hyprtk-bar-qt's button surfaces).
 import QtQuick
 import "../theme"
 
@@ -9,25 +10,28 @@ Rectangle {
     signal clicked()
 
     implicitWidth: label.implicitWidth + 28
-    implicitHeight: 32
+    implicitHeight: Theme.controlHeight
     radius: 8
-    color: !enabled ? Theme.card
-         : primary ? Theme.accent
-         : hover.hovered ? Qt.rgba(1, 1, 1, 0.10)
-         : Qt.rgba(1, 1, 1, 0.05)
-    border.color: primary ? "transparent" : Theme.border
-    opacity: enabled ? 1 : 0.5
+    color: !enabled ? Theme.alpha(Theme.dim, 0.08)
+         : primary ? (pressedArea.pressed ? Theme.accent : Theme.alpha(Theme.accent, 0.85))
+         : pressedArea.pressed ? Theme.alpha(Theme.accent, Theme.pressedAlpha)
+         : hover.hovered ? Theme.alpha(Theme.accent2, 0.28)
+         : Theme.alpha(Theme.accent2, 0.14)
+    border.width: 1
+    border.color: primary ? "transparent" : Theme.alpha(Theme.accent2, enabled ? 0.35 : 0.15)
+    opacity: enabled ? 1 : 0.6
 
     Text {
         id: label
         anchors.centerIn: parent
         text: root.text
-        color: root.primary ? "#1a1420" : Theme.text
-        font.pixelSize: 12
+        color: root.primary ? Theme.textOnAccent : Theme.foreground
+        font.pixelSize: Theme.scaled(12)
         font.bold: root.primary
     }
     HoverHandler { id: hover }
     MouseArea {
+        id: pressedArea
         anchors.fill: parent
         enabled: root.enabled
         cursorShape: Qt.PointingHandCursor

@@ -6,16 +6,18 @@ import "../theme"
 ComboBox {
     id: root
 
-    implicitHeight: 30
+    property string emptyText: "(default)"
+
+    implicitHeight: Theme.controlHeight
     implicitWidth: 180
-    font.pixelSize: 12
+    font.pixelSize: Theme.scaled(12)
     leftPadding: 10
     rightPadding: 24
 
     contentItem: Text {
-        text: root.displayText
+        text: root.displayText.length > 0 ? root.displayText : root.emptyText
         font: root.font
-        color: root.enabled ? Theme.text : Theme.dim
+        color: root.enabled ? Theme.foreground : Theme.dim
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
@@ -25,13 +27,13 @@ ComboBox {
         anchors.verticalCenter: parent.verticalCenter
         text: "\u25be"
         color: Theme.dim
-        font.pixelSize: 11
+        font.pixelSize: Theme.scaled(11)
     }
 
     background: Rectangle {
         radius: 8
-        color: Qt.rgba(1, 1, 1, 0.05)
-        border.color: root.activeFocus ? Theme.accent : Theme.border
+        color: Theme.alpha(Theme.background, 0.6)
+        border.color: root.activeFocus ? Theme.accent : Theme.alpha(Theme.accent2, 0.30)
     }
 
     delegate: ItemDelegate {
@@ -43,14 +45,14 @@ ComboBox {
         highlighted: root.highlightedIndex === index
         contentItem: Text {
             text: item.modelData
-            color: Theme.text
-            font.pixelSize: 12
+            color: Theme.foreground
+            font.pixelSize: Theme.scaled(12)
             verticalAlignment: Text.AlignVCenter
             leftPadding: 8
             elide: Text.ElideRight
         }
         background: Rectangle {
-            color: item.highlighted ? Qt.rgba(0.13, 0.75, 0.85, 0.20) : "transparent"
+            color: item.highlighted ? Theme.alpha(Theme.accent2, 0.20) : "transparent"
         }
     }
 
@@ -61,9 +63,9 @@ ComboBox {
         padding: 1
         background: Rectangle {
             radius: 8
-            color: Theme.panel
+            color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, Theme.panelOpacityStrong)
             border.width: 1
-            border.color: Qt.rgba(0.13, 0.75, 0.85, 0.35)
+            border.color: Theme.alpha(Theme.accent2, 0.35)
         }
         contentItem: ListView {
             clip: true

@@ -11,7 +11,23 @@ verification.
 See [PLAN.md](PLAN.md) for architecture, milestones, and the bar-qt Animations
 move-out.
 
-## Quick start
+## Install
+
+```bash
+./install.sh --dry-run    # check qs + lua + python
+./install.sh              # install to ~/.local/share/hyprtk-config-manager
+config-manager            # launch the standalone GUI
+config-manager open --overlay   # layer-shell overlay (bar-qt Settings entry)
+./install.sh --uninstall  # remove (backups under ~/.config are kept)
+```
+
+The installer needs no root: it installs the Quickshell tree + Python backend,
+links `config-manager` into `~/.local/bin` (falling back to `/usr/local/bin`
+when that directory is not on PATH) and registers a desktop entry. It requires
+`qs` (Quickshell) and a Lua interpreter (`lua5.4` or `lua`); both ship with the
+hyprtk suite.
+
+## Quick start (from the repo)
 
 ```bash
 ./bin/config-manager --help

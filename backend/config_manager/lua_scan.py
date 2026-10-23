@@ -284,3 +284,27 @@ def set_require_active(text: str, module: str) -> str:
         else:
             lines[i] = f'{indent}-- require("{name}")\n'
     return "".join(lines)
+
+
+def arg_spans(text: str, call: Call) -> list[Span]:
+    """Top-level argument spans inside a call's parentheses."""
+    masked = mask(text)
+    spans: list[Span] = []
+    i = call.open_paren + 1
+    stop = call.close_paren
+    while i < stop:
+        i = _skip_ws(masked, i)
+        if i >= stop:
+            break
+        end = _value_end(masked, i, stop)
+        if end <= i:
+            break
+        spans.append(Span(i, end))
+        i = end
+        while i < stop and masked[i].isspace():
+            i += 1
+        if i < stop and masked[i] == ",":
+            i += 1
+        else:
+            break
+    return spans

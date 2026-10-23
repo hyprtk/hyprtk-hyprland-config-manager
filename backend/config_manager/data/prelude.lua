@@ -190,7 +190,11 @@ local function make_proxy(path)
             return make_proxy(path .. "." .. tostring(key))
         end,
         __call = function(_, ...)
-            record("other", path, argn(...))
+            local args = argn(...)
+            record("other", path, args)
+            local list = {}
+            for i = 1, args.n do list[i] = args[i] end
+            return { __dispatch = path, args = list }
         end,
         __tostring = function()
             return "hl." .. path

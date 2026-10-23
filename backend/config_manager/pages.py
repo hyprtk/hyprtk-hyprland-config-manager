@@ -42,8 +42,8 @@ DESCRIPTIONS = {
     "decoration": "Rounding, opacity, blur, shadow and border colours.",
     "layouts": "Dwindle, master and bind behaviour.",
     "misc": "Miscellaneous compositor settings.",
-    "keybindings": "Key bindings (read-only in this milestone).",
-    "windowrules": "Window, layer and workspace rules (read-only in this milestone).",
+    "keybindings": "Key bindings (hl.bind).",
+    "windowrules": "Window, layer and workspace rules.",
     "nvidia": "NVIDIA environment variables.",
 }
 
@@ -178,63 +178,171 @@ def _fmt(value: Any) -> str:
         return str(value)
 
 
+def _fmt_arg(value: Any) -> str:
+    if isinstance(value, dict):
+        return " ".join(f"{key}={_fmt_arg(val)}" for key, val in value.items())
+    if isinstance(value, list):
+        return "[" + ", ".join(_fmt_arg(item) for item in value) + "]"
+    return _fmt(value)
+
+
+def _fmt_dispatch(value: Any) -> str:
+    if isinstance(value, str) and value.startswith("function: "):
+        return "function()"
+    if isinstance(value, dict) and value.get("__dispatch"):
+        name = str(value["__dispatch"]).replace("dsp.", "")
+        args = value.get("args") or []
+        if isinstance(args, list):
+            parts = [_fmt_arg(arg) for arg in args]
+            return name + ((" " + ", ".join(parts)) if parts else "")
+        return name
+    return _fmt(value)
+
+
+def _field_type(value: Any) -> str:
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    return "str"
+
+
+def _fields(value: Any, prefix: list[str] | None = None) -> list[dict[str, Any]]:
+    prefix = prefix or []
+    out: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key).startswith("_"):
+                continue
+            out.extend(_fields(child, prefix + [str(key)]))
+    elif isinstance(value, (list, tuple)):
+        return []
+    else:
+        path = ".".join(prefix)
+        out.append({
+            "path": path,
+            "label": _humanise(prefix[-1] if prefix else path),
+            "type": _field_type(value),
+            "value": value,
+        })
+    out.sort(key=lambda field: field["path"])
+    return out
+
+
+def _action_source(text: str, line: int) -> str:
+    from . import lua_scan
+
+    calls = lua_scan.find_calls(text, ("bind",))
+    call = None
+    for item in calls:
+        first = text.count("\n", 0, item.start) + 1
+        last = text.count("\n", 0, item.close_paren) + 1
+        if first <= line <= last:
+            call = item
+            break
+    if call is None:
+        return ""
+    spans = lua_scan.arg_spans(text, call)
+    if len(spans) < 2:
+        return ""
+    return text[spans[1].start:spans[1].end].strip()
+
+
 def _items_for(module: str, model: dict, root: Path) -> list[dict[str, Any]]:
     files = module_files(root)
     module_path = files.get(Path(module).stem)
     if module_path is None:
         return []
     target = str(module_path.resolve())
+    rel = module_path.name
+    try:
+        text = module_path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
 
     def src_file(item: dict) -> str:
-        src = item.get("_src") or {}
-        return _src_path(root, src)
+        return _src_path(root, item.get("_src") or {})
+
+    def src_line(item: dict) -> int:
+        return int((item.get("_src") or {}).get("line") or 0)
 
     items: list[dict[str, Any]] = []
 
     for key, value in (model.get("env") or {}).items():
         src = (model.get("sources") or {}).get(f"env.{key}") or {}
         if _src_path(root, src) == target:
-            items.append({"kind": "env", "label": key, "value": _fmt(value)})
-
-    for bind in model.get("binds") or []:
-        if src_file(bind) == target:
             items.append({
-                "kind": "bind",
-                "label": _fmt(bind.get("keys")),
-                "value": _fmt(bind.get("dispatcher")),
+                "kind": "env", "key": key, "value": value,
+                "file": rel, "line": int(src.get("line") or 0),
             })
-
-    for monitor in model.get("monitors") or []:
-        if src_file(monitor) == target:
-            label = monitor.get("output") or "monitor"
-            value = f"{monitor.get('mode') or 'preferred'} · scale {monitor.get('scale', 1)}"
-            items.append({"kind": "monitor", "label": label, "value": value})
-
-    for kind, rules in (model.get("rules") or {}).items():
-        for rule in rules:
-            if src_file(rule) != target:
-                continue
-            label = rule.get("name") or kind.replace("_rule", "")
-            value = _fmt(rule.get("match") or rule)
-            items.append({"kind": "rule", "label": label, "value": value})
 
     for call in model.get("exec") or []:
         if src_file(call) == target:
             items.append({
-                "kind": "exec",
-                "label": call.get("kind") or "exec",
-                "value": _fmt(call.get("command")),
+                "kind": "exec", "label": call.get("kind") or "exec_cmd",
+                "command": _fmt(call.get("command")),
+                "file": rel, "line": src_line(call),
             })
 
-    for unknown in model.get("unknown") or []:
-        if src_file(unknown) == target:
+    for bind in model.get("binds") or []:
+        if src_file(bind) == target:
+            line = src_line(bind)
             items.append({
-                "kind": "call",
-                "label": unknown.get("name") or "hl.*",
-                "value": _fmt(unknown.get("value")),
+                "kind": "bind",
+                "keys": _fmt(bind.get("keys")),
+                "action": _action_source(text, line),
+                "file": rel, "line": line,
             })
 
-    return items[:250]
+    for monitor in model.get("monitors") or []:
+        if src_file(monitor) == target:
+            fields = _fields({k: v for k, v in monitor.items() if k != "_src"})
+            items.append({
+                "kind": "monitor",
+                "label": str(monitor.get("output") or "Monitor (auto)"),
+                "fields": fields,
+                "file": rel, "line": src_line(monitor),
+            })
+
+    for rule_kind, rules in (model.get("rules") or {}).items():
+        for rule in rules:
+            if src_file(rule) != target:
+                continue
+            fields = _fields({k: v for k, v in rule.items() if k != "_src"})
+            label = rule.get("name") or (rule.get("match") or {}).get("title") \
+                or (rule.get("match") or {}).get("class") or rule_kind.replace("_rule", "")
+            items.append({
+                "kind": "rule", "ruleKind": rule_kind,
+                "label": str(label), "fields": fields,
+                "file": rel, "line": src_line(rule),
+            })
+
+    return sorted(items, key=lambda item: (item.get("line") or 0))
+
+
+def _require_lines(root: Path) -> list[dict[str, Any]]:
+    import re
+
+    try:
+        text = (root / "hyprland.lua").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    pattern = re.compile(r'^(?P<indent>\s*)(?P<comment>--\s*)?require\(\s*["\'](?P<module>[^"\']+)["\']\s*\)')
+    out: list[dict[str, Any]] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        m = pattern.match(line)
+        if m is None:
+            continue
+        out.append({
+            "kind": "require",
+            "module": m.group("module"),
+            "active": m.group("comment") is None,
+            "file": "hyprland.lua",
+            "line": number,
+        })
+    return out
 
 
 def _src_path(root: Path, src: dict) -> str:
@@ -248,12 +356,6 @@ def _src_path(root: Path, src: dict) -> str:
 
 
 def _load_order(root: Path, model: dict) -> dict[str, Any]:
-    rows = []
-    for name in model.get("requires") or []:
-        stem = Path(name).name
-        exists = (root / f"{stem}.lua").is_file()
-        rows.append((stem, exists))
-    active = animation_files(root, model.get("requires") or [])
     return {
         "id": "hyprland",
         "title": TITLES["hyprland"],
@@ -262,10 +364,7 @@ def _load_order(root: Path, model: dict) -> dict[str, Any]:
         "active": True,
         "description": DESCRIPTIONS["hyprland"],
         "options": [],
-        "items": [{"kind": "require", "label": f"require({name})",
-                   "value": "" if ok else "missing file"} for name, ok in rows]
-                 + [{"kind": "note", "label": "animations", "value":
-                     ", ".join(a["file"] for a in active) or "-"}],
+        "items": _require_lines(root),
     }
 
 
@@ -333,6 +432,8 @@ def build(root: Path, model: dict | None = None) -> dict[str, Any]:
                 "value": "inactive — add a require() to hyprland.lua to use this file",
             }],
         })
+
+    pages.sort(key=lambda page: str(page.get("title") or page["id"]).lower())
 
     return {
         "pages": pages,

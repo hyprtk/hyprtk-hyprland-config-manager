@@ -120,6 +120,20 @@ def _check(model: dict, spec: dict) -> None:
     elif kind == "require":
         if spec["module"] not in model["requires"]:
             raise VerifyError(f"require({spec['module']!r}) is not active after write")
+    elif kind == "require_state":
+        active = spec["module"] in model["requires"]
+        if active != bool(spec.get("active")):
+            raise VerifyError(
+                f"require({spec['module']!r}) should be {'active' if spec.get('active') else 'inactive'}"
+            )
+    elif kind == "exec":
+        if not any(c.get("command") == spec["command"] for c in model.get("exec") or []):
+            raise VerifyError(f"exec command {spec['command']!r} missing after write")
+    elif kind == "bind":
+        if not any(b.get("keys") == spec["keys"] for b in model.get("binds") or []):
+            raise VerifyError(f"binding {spec['keys']!r} missing after write")
+    elif kind == "probe":
+        pass
     else:
         raise VerifyError(f"unknown verify spec: {kind!r}")
 

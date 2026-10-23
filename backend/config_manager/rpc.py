@@ -10,13 +10,14 @@ One request per line on stdin, one response per line on stdout:
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import traceback
 from pathlib import Path
 from typing import Any, Callable
 
 from . import lua_edit, pages, schema, state, verify
-from .lua_probe import ProbeError, discover, probe
+from .lua_probe import ProbeError, discover, lua_binary, probe
 from .paths import find_hypr_dir
 from .writers import bar as bar_writer
 
@@ -61,6 +62,95 @@ def _schema(params: dict) -> dict:
         return pages.build(root)
     except (ProbeError, OSError):
         return schema.schema()
+
+
+def _file_target(root: Path, params: dict) -> tuple[str, Path]:
+    name = str(params.get("file") or params.get("module") or "")
+    if not name:
+        raise RpcError("no file given")
+    rel = name if name.endswith(".lua") else f"{name}.lua"
+    target = root / rel
+    try:
+        target.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise RpcError(f"{rel} is outside {root}") from exc
+    if not target.is_file():
+        raise RpcError(f"{rel} does not exist")
+    return rel, target
+
+
+def _file_read(params: dict) -> dict:
+    root = _root(params)
+    rel, target = _file_target(root, params)
+    return {"file": rel, "text": target.read_text(encoding="utf-8")}
+
+
+def _syntax_check(path: Path) -> None:
+    try:
+        proc = subprocess.run(
+            [lua_binary(), "-e", f"assert(loadfile([[{path}]]))"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RpcError(f"Lua syntax check failed: {exc}") from exc
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "").strip() or "invalid Lua"
+        raise RpcError(f"Lua syntax error: {msg}")
+
+
+def _file_save(params: dict) -> dict:
+    root = _root(params)
+    rel, target = _file_target(root, params)
+    text = params.get("text")
+    if not isinstance(text, str):
+        raise RpcError("text must be a string")
+
+    original = target.read_text(encoding="utf-8")
+    if text == original:
+        return {"ok": True, "file": rel, "changed": False, "backup": None}
+
+    _syntax_check_preview(target, text)
+    session = state.Session(root, f"edit {rel}")
+    edit = lua_edit.Edit(rel, original, text, f"saved {rel}")
+    try:
+        session.write(edit)
+        # Active modules are verified through the real require chain; inactive
+        # modules are probed on their own so a broken file is still rejected.
+        model = probe(root)
+        if rel not in [f"{name}.lua" for name in model["requires"]] and rel != "hyprland.lua":
+            probe(root, main=rel)
+    except BaseException as exc:
+        session.rollback()
+        session.finish("rolled-back", str(exc))
+        raise
+    manifest = session.finish("ok")
+    return {"ok": True, "file": rel, "changed": True, "backup": manifest}
+
+
+def _syntax_check_preview(target: Path, text: str) -> None:
+    """Syntax-check the new text before it is written over the real file."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False, encoding="utf-8") as fh:
+        fh.write(text)
+        tmp = fh.name
+    try:
+        _syntax_check(Path(tmp))
+    finally:
+        try:
+            Path(tmp).unlink()
+        except OSError:
+            pass
+
+
+def _reload(params: dict) -> dict:
+    try:
+        proc = subprocess.run(["hyprctl", "reload"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RpcError(f"hyprctl reload failed: {exc}") from exc
+    if proc.returncode != 0:
+        raise RpcError((proc.stderr or proc.stdout or "hyprctl reload failed").strip())
+    return {"ok": True, "output": (proc.stdout or "").strip()}
 
 
 def _module_dump(params: dict) -> dict:
@@ -127,8 +217,32 @@ def _apply(params: dict) -> dict:
                     check["main"] = edit.relpath
                 specs.append(check)
             elif kind == "env":
-                edit = lua_edit.set_env(root, item["key"], item["value"])
+                edit = lua_edit.set_env(root, item["key"], item["value"], module=item.get("module"))
                 specs.append({"type": "env", "key": item["key"], "value": item["value"]})
+            elif kind == "exec":
+                edit = lua_edit.set_exec(root, item["file"], item["line"], item["command"])
+                specs.append({"type": "exec", "command": item["command"]})
+            elif kind == "bind":
+                edit = lua_edit.set_bind(
+                    root, item["file"], int(item.get("line") or 0),
+                    item["keys"], item["action"],
+                )
+                specs.append({"type": "bind", "keys": item["keys"]})
+            elif kind == "call_field":
+                edit = lua_edit.set_call_field(
+                    root, item["file"], item["line"], item["call"], item["path"],
+                    item["value"], kind=item.get("valueType"),
+                )
+                specs.append({"type": "probe"})
+            elif kind == "require_toggle":
+                edit = lua_edit.set_require(
+                    root, item["line"], item["module"], bool(item.get("active")),
+                )
+                specs.append({"type": "require_state", "module": item["module"],
+                              "active": bool(item.get("active"))})
+            elif kind == "require_add":
+                edit = lua_edit.add_require(root, item["module"])
+                specs.append({"type": "require_state", "module": item["module"], "active": True})
             elif kind == "animations_mode":
                 edit = lua_edit.set_animations_mode(root, item["mode"])
                 specs.append({"type": "require", "module": f"animations-{item['mode']}"})
@@ -198,6 +312,9 @@ HANDLERS: dict[str, Callable[[dict], Any]] = {
     "apply": _apply,
     "schema": _schema,
     "module.dump": _module_dump,
+    "file.read": _file_read,
+    "file.save": _file_save,
+    "reload": _reload,
     "pages": lambda p: schema.pages(),
     "bar.get": _bar_get,
     "bar.set": _bar_set,

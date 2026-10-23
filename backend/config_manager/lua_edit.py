@@ -297,13 +297,15 @@ def set_animations_mode(root: Path, mode: str) -> Edit:
     return Edit("hyprland.lua", text, updated, f"animations mode -> {mode}")
 
 
-def set_env(root: Path, key: str, value: Any) -> Edit:
+def set_env(root: Path, key: str, value: Any, *, module: str | None = None) -> Edit:
     """Set an hl.env("KEY", "value") entry, adding it if missing."""
     root = Path(root).expanduser()
     model = probe(root)
     src = model["sources"].get(f"env.{key}")
     if src and src.get("file"):
         relpath = _rel(root, src["file"])
+    elif module:
+        relpath = _target_rel(root, module)
     else:
         relpath = "environment.lua"
         if not (root / relpath).is_file():
@@ -334,3 +336,119 @@ def set_env(root: Path, key: str, value: Any) -> Edit:
 
     updated = text.rstrip("\n") + f'\nhl.env("{key}", {lua_literal(value, "str")})\n'
     return Edit(relpath, text, updated, f"added env.{key}")
+
+
+def _target_rel(root: Path, module: str) -> str:
+    rel = _rel(root, module if str(module).endswith(".lua") else f"{module}.lua")
+    if not (root / rel).is_file():
+        raise EditError(f"{rel} does not exist")
+    return rel
+
+
+def _call_on_line(text: str, kinds: tuple[str, ...], line: int) -> lua_scan.Call:
+    calls = lua_scan.find_calls(text, kinds)
+    call = _call_at_line(text, calls, int(line))
+    if call is None:
+        raise EditError(f"no hl.{kinds[0]} call on line {line}")
+    return call
+
+
+def set_exec(root: Path, module: str, line: int, command: str) -> Edit:
+    """Replace the command string of hl.exec/exec_cmd/exec_once on `line`."""
+    root = Path(root).expanduser()
+    rel = _target_rel(root, module)
+    text = _read(root, rel)
+    call = _call_on_line(text, ("exec", "exec_cmd", "exec_once"), line)
+    spans = lua_scan.arg_spans(text, call)
+    if not spans:
+        raise EditError(f"hl.{call.kind} on line {line} has no command argument")
+    updated = lua_scan.replace_span(text, spans[0], lua_literal(command, "str"))
+    return Edit(rel, text, updated, f"set {call.kind} command (line {line})")
+
+
+def set_bind(root: Path, module: str, line: int, keys: str, action: str) -> Edit:
+    """Replace keys + dispatcher expression of hl.bind on `line`."""
+    root = Path(root).expanduser()
+    rel = _target_rel(root, module)
+    text = _read(root, rel)
+    if not str(action).strip():
+        raise EditError("binding action cannot be empty")
+    if line is None or int(line) <= 0:
+        updated = text.rstrip("\n") + f'\nhl.bind({lua_literal(keys, "str")}, {action.strip()})\n'
+        return Edit(rel, text, updated, "added binding")
+    call = _call_on_line(text, ("bind",), int(line))
+    spans = lua_scan.arg_spans(text, call)
+    if len(spans) < 2:
+        raise EditError(f"hl.bind on line {line} needs keys and a dispatcher")
+    updated = lua_scan.replace_span(text, spans[1], action.strip())
+    updated = lua_scan.replace_span(updated, spans[0], lua_literal(keys, "str"))
+    return Edit(rel, text, updated, f"set binding {keys}")
+
+
+def set_call_field(root: Path, module: str, line: int, call_kind: str,
+                   key_path: str, value: Any, *, kind: str | None = None) -> Edit:
+    """Set a nested key inside any `hl.<call_kind>({...})` table call."""
+    root = Path(root).expanduser()
+    rel = _target_rel(root, module)
+    text = _read(root, rel)
+    call = _call_on_line(text, (call_kind,), int(line))
+    table = lua_scan.first_table_arg(text, call)
+    if table < 0:
+        raise EditError(f"hl.{call_kind} on line {line} has no table argument")
+    masked = lua_scan.mask(text)
+    parts = [p for p in str(key_path).split(".") if p]
+    if not parts:
+        raise EditError("empty key path")
+
+    span = lua_scan.find_path(masked, table, parts)
+    if span is not None:
+        literal = lua_literal(value, kind or _kind_of(text[span.start:span.end]))
+        updated = lua_scan.replace_span(text, span, literal)
+        note = f"set {call_kind}.{key_path} (line {line})"
+    else:
+        parent_path = parts[:-1]
+        if not parent_path:
+            updated = lua_scan.insert_key(text, table, parts[0], lua_literal(value, kind))
+        else:
+            parent = lua_scan.find_path(masked, table, parent_path)
+            if parent is None:
+                raise EditError(f"{'.'.join(parent_path)} is not a table in {rel}:{line}")
+            brace = lua_scan._skip_ws(masked, parent.start)
+            if masked[brace] != "{":
+                raise EditError(f"{'.'.join(parent_path)} is not a table in {rel}:{line}")
+            updated = lua_scan.insert_key(text, brace, parts[-1], lua_literal(value, kind))
+        note = f"added {call_kind}.{key_path} (line {line})"
+    return Edit(rel, text, updated, note)
+
+
+_REQUIRE_LINE = re.compile(
+    r'^(?P<indent>\s*)(?P<comment>--\s*)?require\(\s*(?P<q>["\'])(?P<module>[^"\']+)(?P=q)\s*\)(?P<tail>.*)$'
+)
+
+
+def set_require(root: Path, line: int, module: str, active: bool) -> Edit:
+    """Rename and/or enable a require() line in hyprland.lua."""
+    root = Path(root).expanduser()
+    rel = "hyprland.lua"
+    text = _read(root, rel)
+    lines = text.splitlines(keepends=True)
+    idx = int(line) - 1
+    if idx < 0 or idx >= len(lines):
+        raise EditError(f"line {line} is outside {rel}")
+    m = _REQUIRE_LINE.match(lines[idx].rstrip("\n"))
+    if m is None:
+        raise EditError(f"line {line} is not a require() line in {rel}")
+    tail = m.group("tail") or ""
+    newline = (m.group("indent") + ("" if active else "-- ")
+               + f'require("{module}")' + tail + "\n")
+    lines[idx] = newline
+    updated = "".join(lines)
+    return Edit(rel, text, updated, f"require {module} ({'on' if active else 'off'})")
+
+
+def add_require(root: Path, module: str) -> Edit:
+    root = Path(root).expanduser()
+    rel = "hyprland.lua"
+    text = _read(root, rel)
+    updated = text.rstrip("\n") + f'\nrequire("{module}")\n'
+    return Edit(rel, text, updated, f"added require({module})")

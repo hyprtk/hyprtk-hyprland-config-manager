@@ -168,64 +168,52 @@ Item {
         ColumnLayout {
             id: col
             width: parent.width
-            spacing: 14
+            spacing: 12
 
             // ── target file ──────────────────────────────────────────
-            Rectangle {
+            RowLayout {
                 Layout.fillWidth: true
-                implicitHeight: targetRow.implicitHeight + 22
-                radius: 10
-                color: Qt.rgba(1, 1, 1, 0.03)
-                border.color: Theme.border
+                spacing: 8
 
-                RowLayout {
-                    id: targetRow
-                    anchors.fill: parent
-                    anchors.margins: 11
-                    spacing: 12
-
-                    ColumnLayout {
-                        spacing: 2
-                        Text { text: "Animations file"; color: Theme.text; font.pixelSize: 13 }
-                        Text {
-                            text: "Edits are written to the selected file"
-                            color: Theme.dim
-                            font.pixelSize: 10
-                        }
+                Text {
+                    Layout.preferredWidth: 170
+                    text: "Animations file"
+                    color: Theme.foreground
+                    font.pixelSize: Theme.scaled(12)
+                }
+                TComboBox {
+                    Layout.preferredWidth: 210
+                    model: page.animFiles.map(f => f.title + (f.active ? "  · active" : ""))
+                    currentIndex: Math.max(0, page.animFiles.findIndex(f => f.file === page.targetFile))
+                    onActivated: i => page.requestTarget(page.animFiles[i].file)
+                }
+                Rectangle {
+                    visible: page.targetFile !== ""
+                    implicitWidth: activeBadge.implicitWidth + 16
+                    implicitHeight: 20
+                    radius: 6
+                    color: page.targetMeta.active ? Theme.alpha(Theme.accent2, 0.15)
+                                                  : Theme.alpha(Theme.warn, 0.12)
+                    border.color: page.targetMeta.active ? Theme.alpha(Theme.accent2, 0.5)
+                                                         : Theme.alpha(Theme.warn, 0.45)
+                    Text {
+                        id: activeBadge
+                        anchors.centerIn: parent
+                        text: page.targetMeta.active ? "active file" : "not active"
+                        color: page.targetMeta.active ? Theme.accent2 : Theme.warn
+                        font.pixelSize: Theme.scaled(10)
                     }
-                    TComboBox {
-                        Layout.preferredWidth: 210
-                        model: page.animFiles.map(f => f.title + (f.active ? "  · active" : ""))
-                        currentIndex: Math.max(0, page.animFiles.findIndex(f => f.file === page.targetFile))
-                        onActivated: i => page.requestTarget(page.animFiles[i].file)
-                    }
-                    Rectangle {
-                        visible: page.targetFile !== ""
-                        implicitWidth: activeBadge.implicitWidth + 16
-                        implicitHeight: 22
-                        radius: 6
-                        color: page.targetMeta.active ? Qt.rgba(0.13, 0.75, 0.85, 0.15)
-                                                      : Qt.rgba(1, 1, 0.4, 0.08)
-                        border.color: page.targetMeta.active ? Theme.accent2 : Qt.rgba(1, 1, 0.4, 0.35)
-                        Text {
-                            id: activeBadge
-                            anchors.centerIn: parent
-                            text: page.targetMeta.active ? "active file" : "not active"
-                            color: page.targetMeta.active ? Theme.accent2 : "#e8d76a"
-                            font.pixelSize: 10
-                        }
-                    }
-                    Item { Layout.fillWidth: true }
-                    TButton {
-                        visible: page.targetFile !== "" && !page.targetMeta.active
-                        text: "Make active"
-                        onClicked: page.activateTarget()
-                    }
+                }
+                Item { Layout.fillWidth: true }
+                TButton {
+                    visible: page.targetFile !== "" && !page.targetMeta.active
+                    text: "Make active"
+                    onClicked: page.activateTarget()
                 }
             }
 
             // ── curves ────────────────────────────────────────────────
-            Text { text: "Curves"; color: Theme.accent; font.pixelSize: 12; font.bold: true }
+            Text { text: "Curves"; color: Theme.accent; font.pixelSize: Theme.scaled(12); font.bold: true }
 
             RowLayout {
                 Layout.fillWidth: true
@@ -239,29 +227,30 @@ Item {
                         visible: page.curveNames.length === 0
                         text: "No curves in this file."
                         color: Theme.dim
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.scaled(12)
                     }
 
                     Repeater {
                         model: page.curveNames
                         delegate: Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: 46
-                            radius: 10
+                            implicitHeight: 38
+                            radius: 8
                             color: page.selectedCurve === modelData
-                                   ? Qt.rgba(0.75, 0.52, 0.99, 0.15)
-                                   : Qt.rgba(1, 1, 1, 0.03)
+                                   ? Theme.alpha(Theme.accent, 0.20)
+                                   : Qt.rgba(0, 0, 0, 0)
                             border.color: page.isPending(page.pendingKey("curve", modelData))
-                                          ? Theme.accent2
-                                          : (page.selectedCurve === modelData ? Theme.accent : Theme.border)
+                                          ? Theme.alpha(Theme.accent2, 0.55)
+                                          : (page.selectedCurve === modelData ? Theme.alpha(Theme.accent, 0.55)
+                                                                             : "transparent")
 
                             Text {
                                 anchors.left: parent.left
                                 anchors.leftMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: modelData
-                                color: Theme.text
-                                font.pixelSize: 13
+                                color: Theme.foreground
+                                font.pixelSize: Theme.scaled(13)
                                 font.bold: page.selectedCurve === modelData
                             }
                             Text {
@@ -276,7 +265,7 @@ Item {
                                     return "bezier  " + pts.map(p => "(" + p[0] + "," + p[1] + ")").join(" ");
                                 }
                                 color: Theme.dim
-                                font.pixelSize: 11
+                                font.pixelSize: Theme.scaled(11)
                             }
                             MouseArea {
                                 anchors.fill: parent
@@ -292,7 +281,7 @@ Item {
                         Layout.fillWidth: true
                         implicitHeight: editor.implicitHeight + 20
                         radius: 10
-                        color: Qt.rgba(0, 0, 0, 0.18)
+                        color: Theme.card
                         border.color: Theme.border
 
                         ColumnLayout {
@@ -306,8 +295,8 @@ Item {
                                 Text {
                                     Layout.fillWidth: true
                                     text: "Edit " + (page.selectedCurve || "")
-                                    color: Theme.text
-                                    font.pixelSize: 12
+                                    color: Theme.foreground
+                                    font.pixelSize: Theme.scaled(12)
                                     font.bold: true
                                 }
                                 TComboBox {
@@ -331,8 +320,9 @@ Item {
                                     model: ["x1", "y1", "x2", "y2"]
                                     delegate: ColumnLayout {
                                         spacing: 2
-                                        Text { text: modelData; color: Theme.dim; font.pixelSize: 10 }
+                                        Text { text: modelData; color: Theme.dim; font.pixelSize: Theme.scaled(10) }
                                         TSpinBox {
+                                            Layout.preferredWidth: 96
                                             from: -2
                                             to: 2
                                             step: 0.05
@@ -359,8 +349,9 @@ Item {
                                     model: ["mass", "stiffness", "damping"]
                                     delegate: ColumnLayout {
                                         spacing: 2
-                                        Text { text: modelData; color: Theme.dim; font.pixelSize: 10 }
+                                        Text { text: modelData; color: Theme.dim; font.pixelSize: Theme.scaled(10) }
                                         TSpinBox {
+                                            Layout.preferredWidth: 96
                                             from: 0
                                             to: modelData === "stiffness" ? 2000 : 100
                                             step: modelData === "stiffness" ? 5 : 0.1
@@ -379,10 +370,10 @@ Item {
                 }
 
                 Rectangle {
-                    Layout.preferredWidth: 260
-                    Layout.preferredHeight: 190
+                    Layout.preferredWidth: 240
+                    Layout.preferredHeight: 180
                     radius: 12
-                    color: Qt.rgba(0, 0, 0, 0.25)
+                    color: Theme.card
                     border.color: Theme.border
 
                     Canvas {
@@ -432,19 +423,19 @@ Item {
                         anchors.bottomMargin: 8
                         text: page.selectedCurve || "-"
                         color: Theme.dim
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.scaled(11)
                     }
                 }
             }
 
             // ── tree ──────────────────────────────────────────────────
-            Text { text: "Animation tree"; color: Theme.accent; font.pixelSize: 12; font.bold: true }
+            Text { text: "Animation tree"; color: Theme.accent; font.pixelSize: Theme.scaled(12); font.bold: true }
 
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: tree.implicitHeight + 20
                 radius: 10
-                color: Qt.rgba(1, 1, 1, 0.03)
+                color: Theme.card
                 border.color: Theme.border
 
                 ColumnLayout {
@@ -455,11 +446,12 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Text { Layout.preferredWidth: 150; text: "Leaf"; color: Theme.dim; font.pixelSize: 11 }
-                        Text { Layout.preferredWidth: 44; text: "On"; color: Theme.dim; font.pixelSize: 11 }
-                        Text { Layout.preferredWidth: 96; text: "Speed (ds)"; color: Theme.dim; font.pixelSize: 11 }
-                        Text { Layout.preferredWidth: 150; text: "Curve"; color: Theme.dim; font.pixelSize: 11 }
-                        Text { Layout.fillWidth: true; text: "Style"; color: Theme.dim; font.pixelSize: 11 }
+                        spacing: 8
+                        Text { Layout.preferredWidth: 140; text: "Leaf"; color: Theme.dim; font.pixelSize: Theme.scaled(10); font.bold: true }
+                        Text { Layout.preferredWidth: 44; text: "On"; color: Theme.dim; font.pixelSize: Theme.scaled(10); font.bold: true }
+                        Text { Layout.preferredWidth: 96; text: "Speed (ds)"; color: Theme.dim; font.pixelSize: Theme.scaled(10); font.bold: true }
+                        Text { Layout.preferredWidth: 140; text: "Curve"; color: Theme.dim; font.pixelSize: Theme.scaled(10); font.bold: true }
+                        Text { Layout.fillWidth: true; text: "Style"; color: Theme.dim; font.pixelSize: Theme.scaled(10); font.bold: true }
                     }
                     Repeater {
                         model: page.leafNames
@@ -473,14 +465,16 @@ Item {
                                                            || page.isPending("animation:" + modelData + ":style")
 
                             Text {
-                                Layout.preferredWidth: 150
+                                Layout.preferredWidth: 140
+                                Layout.alignment: Qt.AlignVCenter
                                 text: modelData
-                                color: present ? Theme.text : Theme.dim
-                                font.pixelSize: 12
+                                color: touched ? Theme.accent2 : (present ? Theme.foreground : Theme.dim)
+                                font.pixelSize: Theme.scaled(12)
                                 elide: Text.ElideRight
                             }
                             TCheckBox {
                                 Layout.preferredWidth: 44
+                                Layout.alignment: Qt.AlignVCenter
                                 checked: page.animValue(modelData, "enabled") === true
                                 onToggled: v => page.stageAnim(modelData, "enabled", v, "bool")
                             }
@@ -492,7 +486,7 @@ Item {
                                 onModified: v => page.stageAnim(modelData, "speed", Math.round(v), "int")
                             }
                             TComboBox {
-                                Layout.preferredWidth: 150
+                                Layout.preferredWidth: 140
                                 model: page.curveChoices(modelData)
                                 currentIndex: Math.max(0, page.curveChoices(modelData)
                                                        .indexOf(String(page.animValue(modelData, "curve") || "default")))
@@ -504,25 +498,19 @@ Item {
                                       ? "" : String(page.animValue(modelData, "style"))
                                 onEdited: v => page.stageAnim(modelData, "style", v, "str")
                             }
-                            Rectangle {
-                                Layout.preferredWidth: 4
-                                Layout.preferredHeight: 18
-                                radius: 2
-                                color: touched ? Theme.accent2 : "transparent"
-                            }
                         }
                     }
                 }
             }
 
             // ── bar mirror ────────────────────────────────────────────
-            Text { text: "hyprtk bar"; color: Theme.accent; font.pixelSize: 12; font.bold: true }
+            Text { text: "hyprtk bar"; color: Theme.accent; font.pixelSize: Theme.scaled(12); font.bold: true }
 
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: barCol.implicitHeight + 20
                 radius: 10
-                color: Qt.rgba(1, 1, 1, 0.03)
+                color: Theme.card
                 border.color: Theme.border
 
                 ColumnLayout {
@@ -536,15 +524,15 @@ Item {
                               + "   Mode: " + (page.bar["animations.mode"] ?? "-")
                               + "   Custom speed: " + (page.bar["animations.speed"] ?? "-")
                               + "   UI animations: " + (page.bar["uiAnimations"] ?? "-")
-                        color: Theme.text
-                        font.pixelSize: 12
+                        color: Theme.foreground
+                        font.pixelSize: Theme.scaled(12)
                         wrapMode: Text.WordWrap
                     }
                     Text {
                         Layout.fillWidth: true
                         text: "This group moves out of bar-qt Settings into this page at M3."
                         color: Theme.dim
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.scaled(11)
                     }
                 }
             }

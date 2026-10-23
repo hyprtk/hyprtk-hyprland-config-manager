@@ -8,8 +8,9 @@ import Quickshell
 Singleton {
     id: root
 
+    readonly property bool overlayMode: Quickshell.env("HYPR_CM_OVERLAY") === "1"
     property string page: Quickshell.env("HYPR_CM_PAGE") || "animations"
-    property int windowWidth: 1020
-    property int windowHeight: 720
+    property int windowWidth: 900
+    property int windowHeight: 640
     property real previewSpeedScale: 1.0
 }
